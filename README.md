@@ -5,6 +5,10 @@ Software backend con agentes y supervisión humana.
 
 Contrato: `src/main/resources/META-INF/resources/openapi.yaml` (H-01 onboarding, wallet y KYC).
 
+Las wallets se guardan en la tabla SQLite `wallets` (`wallet_id`, `user_id`, `status`, `created_at`).
+Al iniciar, los registros de wallet existentes en `records` se migran a esa tabla; `payments_enabled`
+sigue derivándose del estado KYC.
+
 ### URL pública de pruebas
 
 - Base URL (ngrok, temporal): `https://opulently-crowd-watch.ngrok-free.dev`

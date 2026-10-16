@@ -1,6 +1,7 @@
 package com.bcp.hackathon.api;
 
 import com.bcp.hackathon.store.SqliteStore;
+import com.bcp.hackathon.store.WalletRepository;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
@@ -10,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasKey;
@@ -21,6 +24,9 @@ import static org.hamcrest.Matchers.notNullValue;
 class H01ContractTest {
     @Inject
     SqliteStore store;
+
+    @Inject
+    WalletRepository wallets;
 
     @BeforeEach
     void resetState() {
@@ -108,11 +114,25 @@ class H01ContractTest {
                 .then().statusCode(404)
                 .body("code", equalTo("WALLET_NOT_FOUND"));
 
-        given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
+        String walletId = given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
                 .when().post("/wallet")
                 .then().statusCode(201)
                 .body("wallet_id", notNullValue())
+                .body("status", equalTo("active"))
+                .body("payments_enabled", equalTo(false))
+                .extract().path("wallet_id");
+
+        given().auth().preemptive().basic(email, "password123")
+                .when().get("/wallet")
+                .then().statusCode(200)
+                .body("wallet_id", equalTo(walletId))
+                .body("status", equalTo("active"))
                 .body("payments_enabled", equalTo(false));
+
+        WalletRepository.StoredWallet storedWallet = wallets.findById(walletId).orElseThrow();
+        assertEquals("active", storedWallet.status());
+        assertNotNull(storedWallet.userId());
+        assertNotNull(storedWallet.createdAt());
 
         given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
                 .when().post("/wallet")

@@ -57,9 +57,35 @@ public class SqliteStore {
                             created_at TEXT NOT NULL
                         )
                         """);
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS wallets (
+                            wallet_id TEXT PRIMARY KEY,
+                            user_id TEXT UNIQUE,
+                            status TEXT NOT NULL,
+                            created_at TEXT
+                        )
+                        """);
             }
+            migrateWalletRecords();
         } catch (IOException | SQLException exception) {
             throw new IllegalStateException("Cannot initialize SQLite storage", exception);
+        }
+    }
+
+    private void migrateWalletRecords() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT OR IGNORE INTO wallets (wallet_id, user_id, status, created_at)
+                    SELECT json_extract(payload, '$.id'),
+                           json_extract(payload, '$.userId'),
+                           json_extract(payload, '$.status'),
+                           json_extract(payload, '$.createdAt')
+                    FROM records
+                    WHERE record_type = 'wallets'
+                      AND json_extract(payload, '$.id') IS NOT NULL
+                      AND json_extract(payload, '$.status') IS NOT NULL
+                    ORDER BY rowid
+                    """);
         }
     }
 
@@ -139,6 +165,7 @@ public class SqliteStore {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM records WHERE record_type <> 'http_logs'");
             statement.executeUpdate("DELETE FROM users");
+            statement.executeUpdate("DELETE FROM wallets");
         } catch (SQLException exception) {
             throw storageFailure(exception);
         }
