@@ -4,28 +4,26 @@ import com.bcp.hackathon.api.ApiException;
 import com.bcp.hackathon.api.ApiModels.ApiError;
 import com.bcp.hackathon.api.ApiModels.RegisterRequest;
 import com.bcp.hackathon.api.ApiModels.User;
-import com.bcp.hackathon.store.SqliteStore;
+import com.bcp.hackathon.store.UserRepository;
+import com.bcp.hackathon.store.UserRepository.StoredUser;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped
 public class UserService {
-    private static final String TYPE = "users";
     private static final int PASSWORD_MIN_CHARS = 8;
     private static final int PASSWORD_MAX_BYTES = 72;
 
     @Inject
-    SqliteStore store;
+    UserRepository users;
 
-    public synchronized User register(RegisterRequest request) {
+    public User register(RegisterRequest request) {
         RegisterRequest body = Objects.requireNonNullElse(request, new RegisterRequest(null, null, null, null));
         FieldValidation validation = new FieldValidation();
         validation.required("name", body.name(), 120);
@@ -37,19 +35,17 @@ public class UserService {
         validatePassword(validation, body.password());
         validation.throwIfAny();
 
-        if (findRecordByEmail(body.email()).isPresent()) {
+        StoredUser stored = new StoredUser(
+                UUID.randomUUID().toString(),
+                body.name(),
+                body.email(),
+                body.phone(),
+                PasswordHasher.hash(body.password()),
+                Instant.now().toString());
+        if (!users.insert(stored)) {
             throw new ApiException(409, new ApiError("EMAIL_ALREADY_REGISTERED", "El correo ya está registrado"));
         }
-        String id = UUID.randomUUID().toString();
-        Map<String, Object> record = new LinkedHashMap<>();
-        record.put("id", id);
-        record.put("name", body.name());
-        record.put("email", body.email());
-        record.put("phone", body.phone());
-        record.put("createdAt", Instant.now().toString());
-        record.put("passwordHash", PasswordHasher.hash(body.password()));
-        store.put(TYPE, id, record);
-        return toUser(record);
+        return toUser(stored);
     }
 
     public Optional<User> authenticate(String email, String password) {
@@ -57,8 +53,8 @@ public class UserService {
                 || password.getBytes(StandardCharsets.UTF_8).length > PASSWORD_MAX_BYTES) {
             return Optional.empty();
         }
-        return findRecordByEmail(email)
-                .filter(record -> PasswordHasher.matches(password, (String) record.get("passwordHash")))
+        return users.findByEmail(email)
+                .filter(user -> PasswordHasher.matches(password, user.passwordHash()))
                 .map(UserService::toUser);
     }
 
@@ -70,21 +66,7 @@ public class UserService {
         }
     }
 
-    private Optional<Map<String, Object>> findRecordByEmail(String email) {
-        if (email == null) {
-            return Optional.empty();
-        }
-        return store.list(TYPE).stream()
-                .filter(record -> email.equalsIgnoreCase((String) record.get("email")))
-                .findFirst();
-    }
-
-    private static User toUser(Map<String, Object> record) {
-        return new User(
-                (String) record.get("id"),
-                (String) record.get("name"),
-                (String) record.get("email"),
-                (String) record.get("phone"),
-                (String) record.get("createdAt"));
+    private static User toUser(StoredUser user) {
+        return new User(user.id(), user.name(), user.email(), user.phone(), user.createdAt());
     }
 }
