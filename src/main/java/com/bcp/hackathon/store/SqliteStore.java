@@ -65,8 +65,19 @@ public class SqliteStore {
                             created_at TEXT
                         )
                         """);
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS contacts (
+                            id TEXT PRIMARY KEY,
+                            owner_id TEXT NOT NULL,
+                            name TEXT NOT NULL,
+                            phone TEXT NOT NULL,
+                            wallet_id TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        )
+                        """);
             }
             migrateWalletRecords();
+            migrateContactRecords();
         } catch (IOException | SQLException exception) {
             throw new IllegalStateException("Cannot initialize SQLite storage", exception);
         }
@@ -84,6 +95,25 @@ public class SqliteStore {
                     WHERE record_type = 'wallets'
                       AND json_extract(payload, '$.id') IS NOT NULL
                       AND json_extract(payload, '$.status') IS NOT NULL
+                    ORDER BY rowid
+                    """);
+        }
+    }
+
+    private void migrateContactRecords() throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                    INSERT OR IGNORE INTO contacts (id, owner_id, name, phone, wallet_id, created_at)
+                    SELECT json_extract(payload, '$.id'),
+                           json_extract(payload, '$.ownerId'),
+                           json_extract(payload, '$.name'),
+                           json_extract(payload, '$.phone'),
+                           json_extract(payload, '$.walletId'),
+                           json_extract(payload, '$.createdAt')
+                    FROM records
+                    WHERE record_type = 'contacts'
+                      AND json_extract(payload, '$.id') IS NOT NULL
+                      AND json_extract(payload, '$.ownerId') IS NOT NULL
                     ORDER BY rowid
                     """);
         }
@@ -166,6 +196,7 @@ public class SqliteStore {
             statement.executeUpdate("DELETE FROM records WHERE record_type <> 'http_logs'");
             statement.executeUpdate("DELETE FROM users");
             statement.executeUpdate("DELETE FROM wallets");
+            statement.executeUpdate("DELETE FROM contacts");
         } catch (SQLException exception) {
             throw storageFailure(exception);
         }

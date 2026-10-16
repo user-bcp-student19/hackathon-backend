@@ -11,8 +11,7 @@ import java.util.regex.Pattern;
 final class FieldValidation {
     static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     static final Pattern PHONE = Pattern.compile("^\\+?[0-9]{9,15}$");
-    static final Pattern UUID = Pattern.compile(
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    static final Pattern WALLET_ID = Pattern.compile("^wallet_[0-9a-f]{16}$");
 
     private final List<FieldError> errors = new ArrayList<>();
 

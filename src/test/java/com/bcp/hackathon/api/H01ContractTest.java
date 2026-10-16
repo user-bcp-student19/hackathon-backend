@@ -1,6 +1,7 @@
 package com.bcp.hackathon.api;
 
 import com.bcp.hackathon.BcpWalletMockResource;
+import com.bcp.hackathon.store.ContactRepository;
 import com.bcp.hackathon.store.SqliteStore;
 import com.bcp.hackathon.store.WalletRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,6 +32,9 @@ class H01ContractTest {
 
     @Inject
     WalletRepository wallets;
+
+    @Inject
+    ContactRepository contacts;
 
     @Inject
     ObjectMapper objectMapper;
@@ -160,20 +164,40 @@ class H01ContractTest {
         String walletId = createWallet(email);
 
         given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
-                .body("{\"name\":\"Ana\",\"phone\":\"+51999999999\",\"wallet_id\":\"" + UUID.randomUUID() + "\"}")
+                .body("{\"name\":\"Ana\",\"phone\":\"+51999999999\",\"wallet_id\":\""
+                        + UUID.randomUUID() + "\"}")
+                .when().post("/contacts")
+                .then().statusCode(400)
+                .body("code", equalTo("VALIDATION_FAILED"))
+                .body("fields.field", hasItem("wallet_id"));
+
+        given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
+                .body("{\"name\":\"Ana\",\"phone\":\"+51999999999\",\"wallet_id\":\"wallet_0000000000000000\"}")
                 .when().post("/contacts")
                 .then().statusCode(422);
 
-        given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
+        String contactId = given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
                 .body("{\"name\":\"Ana\",\"phone\":\"+51999999999\",\"wallet_id\":\"" + walletId + "\"}")
                 .when().post("/contacts")
                 .then().statusCode(201)
-                .body("wallet_id", equalTo(walletId));
+                .body("wallet_id", equalTo(walletId))
+                .extract().path("id");
 
         given().auth().preemptive().basic(email, "password123")
                 .when().get("/contacts")
                 .then().statusCode(200)
                 .body("size()", equalTo(1));
+
+        ContactRepository.StoredContact storedContact = contacts.findByOwner(
+                        wallets.findById(walletId).orElseThrow().userId())
+                .stream()
+                .filter(contact -> contact.id().equals(contactId))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Ana", storedContact.name());
+        assertEquals("+51999999999", storedContact.phone());
+        assertEquals(walletId, storedContact.walletId());
+        assertNotNull(storedContact.createdAt());
     }
 
     @Test

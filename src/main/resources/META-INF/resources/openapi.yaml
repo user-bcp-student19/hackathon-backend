@@ -272,8 +272,11 @@ components:
       properties:
         wallet_id:
           type: string
-          format: uuid
-          description: UUID v4 generado por el sistema
+          minLength: 23
+          maxLength: 23
+          pattern: '^wallet_[0-9a-f]{16}$'
+          example: wallet_cf10a55826d141a7
+          description: Identificador generado por el proveedor BCP
         status:
           type: string
           enum: [active]
@@ -296,7 +299,10 @@ components:
           pattern: '^\+?[0-9]{9,15}$'
         wallet_id:
           type: string
-          format: uuid
+          minLength: 23
+          maxLength: 23
+          pattern: '^wallet_[0-9a-f]{16}$'
+          example: wallet_cf10a55826d141a7
     Contact:
       type: object
       required: [id, name, phone, wallet_id, createdAt]
@@ -310,7 +316,10 @@ components:
           type: string
         wallet_id:
           type: string
-          format: uuid
+          minLength: 23
+          maxLength: 23
+          pattern: '^wallet_[0-9a-f]{16}$'
+          example: wallet_cf10a55826d141a7
         createdAt:
           type: string
           format: date-time

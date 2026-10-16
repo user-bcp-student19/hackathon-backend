@@ -27,7 +27,7 @@ public class BcpWalletMockResource implements QuarkusTestResourceLifecycleManage
                 ObjectMapper mapper = JsonMapper.builder().build();
                 ObjectNode response = mapper.createObjectNode()
                         .put("id", UUID.randomUUID().toString())
-                        .put("wallet_id", UUID.randomUUID().toString())
+                        .put("wallet_id", externalWalletId())
                         .put("scenario", "APPROVED")
                         .put("status", "ACTIVE");
                 byte[] body = mapper.writeValueAsBytes(response);
@@ -53,5 +53,9 @@ public class BcpWalletMockResource implements QuarkusTestResourceLifecycleManage
 
     public static String lastRequestBody() {
         return LAST_REQUEST_BODY.get();
+    }
+
+    private static String externalWalletId() {
+        return "wallet_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 }
