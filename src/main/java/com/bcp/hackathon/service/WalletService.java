@@ -10,7 +10,6 @@ import jakarta.inject.Inject;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
 
 @ApplicationScoped
 public class WalletService {
@@ -20,10 +19,20 @@ public class WalletService {
     @Inject
     KycService kyc;
 
+    @Inject
+    BcpWalletClient bcpWallet;
+
     public synchronized Wallet create(String userId) {
-        String walletId = UUID.randomUUID().toString();
-        StoredWallet wallet = new StoredWallet(walletId, userId, "active", Instant.now().toString());
-        if (wallets.findByUser(userId).isPresent() || !wallets.insert(wallet)) {
+        if (wallets.findByUser(userId).isPresent()) {
+            throw walletAlreadyExists();
+        }
+        BcpWalletClient.ExternalWallet externalWallet = bcpWallet.createWalletForUser(userId);
+        StoredWallet wallet = new StoredWallet(
+                externalWallet.walletId(),
+                userId,
+                localStatus(externalWallet.status()),
+                Instant.now().toString());
+        if (!wallets.insert(wallet)) {
             throw walletAlreadyExists();
         }
         return toWallet(wallet);
@@ -41,6 +50,16 @@ public class WalletService {
 
     private static ApiException walletAlreadyExists() {
         return new ApiException(409, new ApiError("WALLET_ALREADY_EXISTS", "El usuario ya tiene wallet"));
+    }
+
+    private static String localStatus(String status) {
+        return switch (status) {
+            case "ACTIVE" -> "active";
+            case "PENDING" -> "pending";
+            case "REJECTED" -> "rejected";
+            default -> throw new ApiException(502,
+                    new ApiError("BCP_WALLET_UNAVAILABLE", "El proveedor externo devolvió un estado inválido"));
+        };
     }
 
     private Wallet toWallet(StoredWallet wallet) {

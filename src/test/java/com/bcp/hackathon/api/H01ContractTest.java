@@ -1,8 +1,11 @@
 package com.bcp.hackathon.api;
 
+import com.bcp.hackathon.BcpWalletMockResource;
 import com.bcp.hackathon.store.SqliteStore;
 import com.bcp.hackathon.store.WalletRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,12 +24,16 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 
 @QuarkusTest
+@QuarkusTestResource(BcpWalletMockResource.class)
 class H01ContractTest {
     @Inject
     SqliteStore store;
 
     @Inject
     WalletRepository wallets;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @BeforeEach
     void resetState() {
@@ -105,7 +112,7 @@ class H01ContractTest {
     }
 
     @Test
-    void walletLifecycle() {
+    void walletLifecycle() throws Exception {
         String email = uniqueEmail();
         registerUser(email, "password123");
 
@@ -133,6 +140,12 @@ class H01ContractTest {
         assertEquals("active", storedWallet.status());
         assertNotNull(storedWallet.userId());
         assertNotNull(storedWallet.createdAt());
+        assertEquals(walletId, storedWallet.walletId());
+        assertEquals(
+                objectMapper.readTree("{\"documentType\":\"TEST\",\"document\":\"TEST-"
+                        + wallets.findById(walletId).orElseThrow().userId()
+                        + "\",\"scenario\":\"APPROVED\"}"),
+                objectMapper.readTree(BcpWalletMockResource.lastRequestBody()));
 
         given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
                 .when().post("/wallet")

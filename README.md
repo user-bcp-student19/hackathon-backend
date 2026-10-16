@@ -8,6 +8,9 @@ Contrato: `src/main/resources/META-INF/resources/openapi.yaml` (H-01 onboarding,
 Las wallets se guardan en la tabla SQLite `wallets` (`wallet_id`, `user_id`, `status`, `created_at`).
 Al iniciar, los registros de wallet existentes en `records` se migran a esa tabla; `payments_enabled`
 sigue derivándose del estado KYC.
+Al crear una wallet, el backend solicita su creación al mock BCP del grupo 3 (`POST /groups/3/kyc/verifications`)
+con `documentType: TEST`, `document` con el formato `TEST-<user_id>` y `scenario: APPROVED`. El `wallet_id` y estado
+recibidos se guardan junto al ID del usuario. La URL base se puede configurar con `BCP_WALLET_BASE_URL`.
 
 ### URL pública de pruebas
 
