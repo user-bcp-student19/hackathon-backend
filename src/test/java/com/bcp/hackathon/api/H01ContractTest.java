@@ -2,6 +2,7 @@ package com.bcp.hackathon.api;
 
 import com.bcp.hackathon.BcpWalletMockResource;
 import com.bcp.hackathon.store.ContactRepository;
+import com.bcp.hackathon.store.PaymentRepository;
 import com.bcp.hackathon.store.SqliteStore;
 import com.bcp.hackathon.store.WalletRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,11 +38,15 @@ class H01ContractTest {
     ContactRepository contacts;
 
     @Inject
+    PaymentRepository payments;
+
+    @Inject
     ObjectMapper objectMapper;
 
     @BeforeEach
     void resetState() {
         store.clearBusinessData();
+        BcpWalletMockResource.resetPaymentRequests();
     }
 
     @Test
@@ -113,6 +118,12 @@ class H01ContractTest {
         given().when().get("/wallet")
                 .then().statusCode(401)
                 .body("code", equalTo("UNAUTHORIZED"));
+
+        given().contentType(ContentType.JSON)
+                .body("{}")
+                .when().post("/payments")
+                .then().statusCode(401)
+                .body("code", equalTo("UNAUTHORIZED"));
     }
 
     @Test
@@ -130,7 +141,7 @@ class H01ContractTest {
                 .then().statusCode(201)
                 .body("wallet_id", notNullValue())
                 .body("status", equalTo("active"))
-                .body("payments_enabled", equalTo(false))
+                .body("payments_enabled", equalTo(true))
                 .extract().path("wallet_id");
 
         given().auth().preemptive().basic(email, "password123")
@@ -138,7 +149,7 @@ class H01ContractTest {
                 .then().statusCode(200)
                 .body("wallet_id", equalTo(walletId))
                 .body("status", equalTo("active"))
-                .body("payments_enabled", equalTo(false));
+                .body("payments_enabled", equalTo(true));
 
         WalletRepository.StoredWallet storedWallet = wallets.findById(walletId).orElseThrow();
         assertEquals("active", storedWallet.status());
@@ -201,7 +212,95 @@ class H01ContractTest {
     }
 
     @Test
-    void kycApprovalEnablesPaymentsAndSecondSubmissionIsRejected() {
+    void paymentUsesOwnedWalletAndContactPersistsAndReplaysIdempotently() throws Exception {
+        String email = uniqueEmail();
+        registerUser(email, "password123");
+        String walletId = createWallet(email);
+        String contactId = given().auth().preemptive().basic(email, "password123")
+                .contentType(ContentType.JSON)
+                .body("{\"name\":\"Ana\",\"phone\":\"+51999999999\",\"wallet_id\":\"" + walletId + "\"}")
+                .when().post("/contacts")
+                .then().statusCode(201)
+                .extract().path("id");
+        String idempotencyKey = UUID.randomUUID().toString();
+        String paymentBody = paymentBody(contactId, 1500);
+
+        given().auth().preemptive().basic(email, "password123")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(ContentType.JSON)
+                .body(paymentBody)
+                .when().post("/payments")
+                .then().statusCode(201)
+                .body("wallet_id", equalTo("wallet-demo"))
+                .body("recipient", equalTo("contact-demo"))
+                .body("amount", equalTo(1500))
+                .body("status", equalTo("PENDING"));
+
+        assertEquals(idempotencyKey, BcpWalletMockResource.lastPaymentIdempotencyKey());
+        assertEquals(
+                objectMapper.readTree("{\"walletId\":\"wallet-demo\",\"recipient\":\"contact-demo\","
+                        + "\"amountCents\":1500,\"currency\":\"PEN\",\"scenario\":\"APPROVED\"}"),
+                objectMapper.readTree(BcpWalletMockResource.lastPaymentRequestBody()));
+        PaymentRepository.StoredPayment storedPayment = payments
+                .findByOwnerAndIdempotencyKey(wallets.findById(walletId).orElseThrow().userId(), idempotencyKey)
+                .orElseThrow();
+        assertEquals(walletId, storedPayment.walletId());
+        assertEquals(contactId, storedPayment.recipient());
+        assertEquals(1500, storedPayment.amountCents());
+        assertEquals("PEN", storedPayment.currency());
+        assertNotNull(storedPayment.createdAt());
+        assertEquals("contact-demo", objectMapper.readTree(storedPayment.responseBody()).path("recipient").asText());
+
+        given().auth().preemptive().basic(email, "password123")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(ContentType.JSON)
+                .body(paymentBody)
+                .when().post("/payments")
+                .then().statusCode(200)
+                .body("recipient", equalTo("contact-demo"));
+        assertEquals(1, BcpWalletMockResource.paymentRequestCount());
+
+        given().auth().preemptive().basic(email, "password123")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(ContentType.JSON)
+                .body(paymentBody(contactId, 1600))
+                .when().post("/payments")
+                .then().statusCode(409)
+                .body("code", equalTo("IDEMPOTENCY_KEY_REUSED"));
+        assertEquals(1, BcpWalletMockResource.paymentRequestCount());
+    }
+
+    @Test
+    void paymentRequiresAnOwnedContactAndValidRequest() {
+        String email = uniqueEmail();
+        registerUser(email, "password123");
+        createWallet(email);
+        given().auth().preemptive().basic(email, "password123").contentType(ContentType.JSON)
+                .body(kycBody("DNI"))
+                .when().post("/kyc/verifications")
+                .then().statusCode(201);
+
+        given().auth().preemptive().basic(email, "password123")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(ContentType.JSON)
+                .body(paymentBody(UUID.randomUUID().toString(), 1500))
+                .when().post("/payments")
+                .then().statusCode(422)
+                .body("code", equalTo("CONTACT_NOT_FOUND"));
+
+        given().auth().preemptive().basic(email, "password123")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType(ContentType.JSON)
+                .body(paymentBody(UUID.randomUUID().toString(), 0))
+                .when().post("/payments")
+                .then().statusCode(400)
+                .body("code", equalTo("VALIDATION_FAILED"))
+                .body("fields.field", hasItem("amountCents"));
+        assertEquals(0, BcpWalletMockResource.paymentRequestCount());
+    }
+
+    @Test
+    void kycApprovalIsRecordedAndSecondSubmissionIsRejected() {
         String email = uniqueEmail();
         registerUser(email, "password123");
         createWallet(email);
@@ -244,7 +343,8 @@ class H01ContractTest {
     void openApiContractIsServed() {
         given().when().get("/openapi.yaml")
                 .then().statusCode(200)
-                .body(containsString("H-01"));
+                .body(containsString("H-01"))
+                .body(containsString("/payments:"));
     }
 
     private static String uniqueEmail() {
@@ -259,6 +359,11 @@ class H01ContractTest {
     private static String kycBody(String documentType) {
         return "{\"documentType\":\"" + documentType + "\",\"documentNumber\":\"12345678\","
                 + "\"fullName\":\"Ana Perez\",\"birthDate\":\"1990-01-31\"}";
+    }
+
+    private static String paymentBody(String contactId, long amountCents) {
+        return "{\"recipient\":\"" + contactId + "\",\"amountCents\":" + amountCents
+                + ",\"currency\":\"PEN\",\"scenario\":\"APPROVED\"}";
     }
 
     private static void registerUser(String email, String password) {

@@ -17,9 +17,6 @@ public class WalletService {
     WalletRepository wallets;
 
     @Inject
-    KycService kyc;
-
-    @Inject
     BcpWalletClient bcpWallet;
 
     public synchronized Wallet create(String userId) {
@@ -66,7 +63,7 @@ public class WalletService {
         return new Wallet(
                 wallet.walletId(),
                 wallet.status(),
-                kyc.isApproved(wallet.userId()),
+                true,
                 wallet.createdAt());
     }
 }

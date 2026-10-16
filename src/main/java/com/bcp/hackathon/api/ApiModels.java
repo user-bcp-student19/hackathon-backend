@@ -37,6 +37,9 @@ public final class ApiModels {
                           @JsonProperty("wallet_id") String walletId, String createdAt) {
     }
 
+    public record PaymentRequest(String recipient, Long amountCents, String currency, String scenario) {
+    }
+
     public record KycRequest(String documentType, String documentNumber, String fullName, String birthDate) {
     }
 

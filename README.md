@@ -10,6 +10,11 @@ Al iniciar, los registros de wallet existentes en `records` se migran a esa tabl
 sigue derivándose del estado KYC.
 Los contactos se guardan en la tabla SQLite `contacts` (`id`, `owner_id`, `name`, `phone`, `wallet_id`,
 `created_at`). Los contactos existentes en `records` se migran a esa tabla al iniciar.
+Los pagos aceptados por el proveedor se guardan en `payments` junto con su clave de idempotencia y la respuesta
+del proveedor. `POST /payments` usa la wallet habilitada del usuario autenticado y requiere que el destinatario sea
+un contacto del mismo usuario. El mock del grupo 3 solo procesa pagos con la wallet semilla `wallet-demo` y el
+destinatario de prueba `contact-demo`; el backend conserva el wallet y el contacto locales en su registro. Estos
+identificadores se pueden configurar con `BCP_PAYMENT_WALLET_ID` y `BCP_PAYMENT_CONTACT_RECIPIENT`.
 Al crear una wallet, el backend solicita su creación al mock BCP del grupo 3 (`POST /groups/3/kyc/verifications`)
 con `documentType: TEST`, `document` con el formato `TEST-<user_id>` y `scenario: APPROVED`. El `wallet_id` y estado
 recibidos se guardan junto al ID del usuario. La URL base se puede configurar con `BCP_WALLET_BASE_URL`.

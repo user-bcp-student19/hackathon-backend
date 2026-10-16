@@ -75,6 +75,20 @@ public class SqliteStore {
                             created_at TEXT NOT NULL
                         )
                         """);
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS payments (
+                            owner_id TEXT NOT NULL,
+                            idempotency_key TEXT NOT NULL,
+                            wallet_id TEXT NOT NULL,
+                            recipient TEXT NOT NULL,
+                            amount_cents INTEGER NOT NULL,
+                            currency TEXT NOT NULL,
+                            scenario TEXT NOT NULL,
+                            response_body TEXT NOT NULL,
+                            created_at TEXT NOT NULL,
+                            PRIMARY KEY (owner_id, idempotency_key)
+                        )
+                        """);
             }
             migrateWalletRecords();
             migrateContactRecords();
@@ -197,6 +211,7 @@ public class SqliteStore {
             statement.executeUpdate("DELETE FROM users");
             statement.executeUpdate("DELETE FROM wallets");
             statement.executeUpdate("DELETE FROM contacts");
+            statement.executeUpdate("DELETE FROM payments");
         } catch (SQLException exception) {
             throw storageFailure(exception);
         }

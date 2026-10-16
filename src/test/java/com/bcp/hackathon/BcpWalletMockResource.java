@@ -11,10 +11,14 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class BcpWalletMockResource implements QuarkusTestResourceLifecycleManager {
     private static final AtomicReference<String> LAST_REQUEST_BODY = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_PAYMENT_REQUEST_BODY = new AtomicReference<>();
+    private static final AtomicReference<String> LAST_PAYMENT_IDEMPOTENCY_KEY = new AtomicReference<>();
+    private static final AtomicInteger PAYMENT_REQUEST_COUNT = new AtomicInteger();
 
     private HttpServer server;
 
@@ -37,6 +41,29 @@ public class BcpWalletMockResource implements QuarkusTestResourceLifecycleManage
                     output.write(body);
                 }
             });
+            server.createContext("/groups/3/payments", exchange -> {
+                String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                LAST_PAYMENT_REQUEST_BODY.set(requestBody);
+                LAST_PAYMENT_IDEMPOTENCY_KEY.set(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+                PAYMENT_REQUEST_COUNT.incrementAndGet();
+                ObjectMapper mapper = JsonMapper.builder().build();
+                var request = mapper.readTree(requestBody);
+                ObjectNode response = mapper.createObjectNode()
+                        .put("id", UUID.randomUUID().toString())
+                        .put("wallet_id", request.path("walletId").asText())
+                        .put("recipient", request.path("recipient").asText())
+                        .put("amount", request.path("amountCents").asLong())
+                        .put("status", "PENDING")
+                        .put("scenario", request.path("scenario").asText())
+                        .put("idem", exchange.getRequestHeaders().getFirst("Idempotency-Key"))
+                        .put("fingerprint", "test");
+                byte[] body = mapper.writeValueAsBytes(response);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(202, body.length);
+                try (var output = exchange.getResponseBody()) {
+                    output.write(body);
+                }
+            });
             server.start();
             return Map.of("bcp.wallet.base-url", "http://127.0.0.1:" + server.getAddress().getPort());
         } catch (IOException exception) {
@@ -53,6 +80,24 @@ public class BcpWalletMockResource implements QuarkusTestResourceLifecycleManage
 
     public static String lastRequestBody() {
         return LAST_REQUEST_BODY.get();
+    }
+
+    public static String lastPaymentRequestBody() {
+        return LAST_PAYMENT_REQUEST_BODY.get();
+    }
+
+    public static String lastPaymentIdempotencyKey() {
+        return LAST_PAYMENT_IDEMPOTENCY_KEY.get();
+    }
+
+    public static int paymentRequestCount() {
+        return PAYMENT_REQUEST_COUNT.get();
+    }
+
+    public static void resetPaymentRequests() {
+        LAST_PAYMENT_REQUEST_BODY.set(null);
+        LAST_PAYMENT_IDEMPOTENCY_KEY.set(null);
+        PAYMENT_REQUEST_COUNT.set(0);
     }
 
     private static String externalWalletId() {

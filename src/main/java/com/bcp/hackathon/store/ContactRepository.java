@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @ApplicationScoped
 public class ContactRepository {
@@ -59,6 +60,31 @@ public class ContactRepository {
                 }
             }
             return contacts;
+        });
+    }
+
+    public Optional<StoredContact> findByIdAndOwner(String contactId, String ownerId) {
+        return store.withConnection(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    SELECT id, owner_id, name, phone, wallet_id, created_at
+                    FROM contacts
+                    WHERE id = ? AND owner_id = ?
+                    """)) {
+                statement.setString(1, contactId);
+                statement.setString(2, ownerId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new StoredContact(
+                            resultSet.getString("id"),
+                            resultSet.getString("owner_id"),
+                            resultSet.getString("name"),
+                            resultSet.getString("phone"),
+                            resultSet.getString("wallet_id"),
+                            resultSet.getString("created_at")));
+                }
+            }
         });
     }
 }
