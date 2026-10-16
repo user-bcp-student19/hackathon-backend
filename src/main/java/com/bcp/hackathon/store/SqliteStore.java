@@ -47,9 +47,32 @@ public class SqliteStore {
                             PRIMARY KEY (record_type, record_id)
                         )
                         """);
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS users (
+                            id TEXT PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                            phone TEXT NOT NULL,
+                            password_hash TEXT NOT NULL,
+                            created_at TEXT NOT NULL
+                        )
+                        """);
             }
         } catch (IOException | SQLException exception) {
             throw new IllegalStateException("Cannot initialize SQLite storage", exception);
+        }
+    }
+
+    @FunctionalInterface
+    public interface ConnectionWork<T> {
+        T apply(Connection connection) throws SQLException;
+    }
+
+    public synchronized <T> T withConnection(ConnectionWork<T> work) {
+        try {
+            return work.apply(connection);
+        } catch (SQLException exception) {
+            throw storageFailure(exception);
         }
     }
 
@@ -115,6 +138,7 @@ public class SqliteStore {
     public synchronized void clearBusinessData() {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM records WHERE record_type <> 'http_logs'");
+            statement.executeUpdate("DELETE FROM users");
         } catch (SQLException exception) {
             throw storageFailure(exception);
         }

@@ -50,6 +50,17 @@ class H01ContractTest {
     }
 
     @Test
+    void duplicateEmailIsCaseInsensitive() {
+        String email = uniqueEmail();
+        registerUser(email, "password123");
+        given().contentType(ContentType.JSON)
+                .body(registerBody(email.toUpperCase(), "password123"))
+                .when().post("/users")
+                .then().statusCode(409)
+                .body("code", equalTo("EMAIL_ALREADY_REGISTERED"));
+    }
+
+    @Test
     void invalidRegisterReturns400WithFields() {
         given().contentType(ContentType.JSON)
                 .body(registerBody("not-an-email", "short"))
